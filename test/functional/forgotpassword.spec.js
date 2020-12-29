@@ -1,7 +1,11 @@
 const Factory = require('@adonisjs/lucid/src/Factory');
+const { factory } = require('typescript');
 
 const { test, trait, beforeEach, afterEach } = use('Test/Suite')('Session');
 
+const { subHours, format} = require('date-fns');
+
+const Database = use('Database');
 const Mail = use('Mail');
 const Hash = use('Hash');
 
@@ -11,15 +15,12 @@ const User = use('App/Models/User');
 trait('Test/ApiClient')
 trait('DatabaseTransactions')
 
-beforeEach(()=>{
+
+test('it should send an email with reset password instructions', async ({assert, client})=>{
   Mail.fake()
-})
 
-afterEach(()=>{
-  Mail.restore()
-})
+  const email= 'derickbenji2@gmail.com';
 
-async function generateForgotPasswordToken(client, email){
   const user = await Factory
   .model( 'App/Models/User')
   .create({ email })
@@ -31,32 +32,25 @@ async function generateForgotPasswordToken(client, email){
 
   const token = await user.tokens().first();
 
-  return token;
-}
-
-
-test('it should send an email with reset password instructions', async ({assert, client})=>{
-  const email= 'derickbenji2@gmail.com';
-
-  const token = await generateForgotPasswordToken(client, email);
-
   const recentEmail = Mail.pullRecent()
     assert.equal(recentEmail.message.to[0].address, email)
 
     assert.include(token.toJSON(), {
       type: 'forgotpassword'
     })
-
+    Mail.restore()
 });
 
-test('it should e able to reset password', async ({assert, client})=>{
+test('it should be able to reset password', async ({assert, client})=>{
   const email= 'derickbenji2@gmail.com';
-  const {token} = await generateForgotPasswordToken(client, email);
+  const user = await Factory.model('App/Models/User').create({email});
+  const userToken = await Factory.model('App/Models/Token').make();
+  await user.tokens().save(userToken);
 
   const response = await client
     .post('/reset')
     .send({
-      token,
+      token: userToken.token,
       password: '123456',
       password_confirmation: '123456'
     })
@@ -64,9 +58,37 @@ test('it should e able to reset password', async ({assert, client})=>{
 
     response.assertStatus(204);
 
-    const user = await User.findBy('email', email);
+    await user.reload();
     const checkPassword = await Hash.verify('123456', user.password);
 
     assert.isTrue(checkPassword)
 })
 
+
+test('it cannot reset password after 2h of forgot password request', async({assert, client})=>{
+  const email= 'derickbenji2@gmail.com';
+  const user = await Factory.model('App/Models/User').create({email});
+  const userToken = await Factory.model('App/Models/Token').make();
+
+  await user.tokens().save(userToken);
+
+  const dateWithSub = format(subHours(new Date(), 2), 'yyyy-MM-dd HH:ii:ss');
+
+  await Database
+    .table('tokens')
+    .where('token', userToken.token)
+    .update('created_at', dateWithSub);
+
+  await userToken.reload();
+
+  const response = await client
+    .post('/reset')
+    .send({
+      token: userToken.token,
+      password: '123456',
+      password_confirmation: '123456'
+    })
+    .end()
+
+    response.assertStatus(400);
+})
