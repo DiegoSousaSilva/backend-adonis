@@ -1,49 +1,42 @@
 const Factory = require('@adonisjs/lucid/src/Factory');
-const { factory } = require('typescript');
 
-const { test, trait, beforeEach, afterEach } = use('Test/Suite')('Session');
+const { test, trait } = use('Test/Suite')('Session');
 
-const { subHours, format} = require('date-fns');
+const { subHours, format } = require('date-fns');
 
 const Database = use('Database');
 const Mail = use('Mail');
 const Hash = use('Hash');
 
-/** @type {typeof import('@adonisjs/lucid/src/Lucid/Model')} */
-const User = use('App/Models/User');
+trait('Test/ApiClient');
+trait('DatabaseTransactions');
 
-trait('Test/ApiClient')
-trait('DatabaseTransactions')
+test('it should send an email with reset password instructions', async ({
+  assert,
+  client,
+}) => {
+  Mail.fake();
 
+  const email = 'derickbenji2@gmail.com';
 
-test('it should send an email with reset password instructions', async ({assert, client})=>{
-  Mail.fake()
+  const user = await Factory.model('App/Models/User').create({ email });
 
-  const email= 'derickbenji2@gmail.com';
-
-  const user = await Factory
-  .model( 'App/Models/User')
-  .create({ email })
-
-  await client
-    .post('/forgot')
-    .send({email})
-    .end()
+  await client.post('/forgot').send({ email }).end();
 
   const token = await user.tokens().first();
 
-  const recentEmail = Mail.pullRecent()
-    assert.equal(recentEmail.message.to[0].address, email)
+  const recentEmail = Mail.pullRecent();
+  assert.equal(recentEmail.message.to[0].address, email);
 
-    assert.include(token.toJSON(), {
-      type: 'forgotpassword'
-    })
-    Mail.restore()
+  assert.include(token.toJSON(), {
+    type: 'forgotpassword',
+  });
+  Mail.restore();
 });
 
-test('it should be able to reset password', async ({assert, client})=>{
-  const email= 'derickbenji2@gmail.com';
-  const user = await Factory.model('App/Models/User').create({email});
+test('it should be able to reset password', async ({ assert, client }) => {
+  const email = 'derickbenji2@gmail.com';
+  const user = await Factory.model('App/Models/User').create({ email });
   const userToken = await Factory.model('App/Models/Token').make();
   await user.tokens().save(userToken);
 
@@ -52,30 +45,30 @@ test('it should be able to reset password', async ({assert, client})=>{
     .send({
       token: userToken.token,
       password: '123456',
-      password_confirmation: '123456'
+      password_confirmation: '123456',
     })
-    .end()
+    .end();
 
-    response.assertStatus(204);
+  response.assertStatus(204);
 
-    await user.reload();
-    const checkPassword = await Hash.verify('123456', user.password);
+  await user.reload();
+  const checkPassword = await Hash.verify('123456', user.password);
 
-    assert.isTrue(checkPassword)
-})
+  assert.isTrue(checkPassword);
+});
 
-
-test('it cannot reset password after 2h of forgot password request', async({assert, client})=>{
-  const email= 'derickbenji2@gmail.com';
-  const user = await Factory.model('App/Models/User').create({email});
+test('it cannot reset password after 2h of forgot password request', async ({
+  client,
+}) => {
+  const email = 'derickbenji2@gmail.com';
+  const user = await Factory.model('App/Models/User').create({ email });
   const userToken = await Factory.model('App/Models/Token').make();
 
   await user.tokens().save(userToken);
 
   const dateWithSub = format(subHours(new Date(), 2), 'yyyy-MM-dd HH:ii:ss');
 
-  await Database
-    .table('tokens')
+  await Database.table('tokens')
     .where('token', userToken.token)
     .update('created_at', dateWithSub);
 
@@ -86,9 +79,9 @@ test('it cannot reset password after 2h of forgot password request', async({asse
     .send({
       token: userToken.token,
       password: '123456',
-      password_confirmation: '123456'
+      password_confirmation: '123456',
     })
-    .end()
+    .end();
 
-    response.assertStatus(400);
-})
+  response.assertStatus(400);
+});
