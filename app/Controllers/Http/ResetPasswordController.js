@@ -1,23 +1,24 @@
 'use strict'
 
-const Token = require('../../Models/Token');
+
 
 const { parseISO, isBefore, subHours } = require('date-fns');
 
 /** @type {typeof import('@adonisjs/lucid/src/Lucid/Model')} */
-const User = use('App/Models/User');
+const Token = require('../../Models/Token');
+//const User = use('App/Models/User');
 
 class ResetPasswordController {
-  async store({request}){
+  async store({request, response}){
     const {token, password} = request.only([
       'token',
       'password'
-    ])
+    ]);
 
     const userToken = await Token.findByOrFail('token', token);
 
     if (isBefore(parseISO(userToken.created_at), subHours (new Date(), 2))){
-      return response.status(400).json({error: 'Invalid date range'})
+      return response.status(400).json({error: 'Invalid date range, please try again.'});
     }
     const user = await userToken.user().fetch();
 
